@@ -23,6 +23,7 @@ start_time = datetime.now()
 total_notifications_sent = 0
 error_count = 0
 pair_notifications = Counter()
+maintenance_coins = set()
 
 def signal_handler(sig, frame, bot_token, chat_id):
     logger.info("Signal handler called with signal: %s", sig)
@@ -122,6 +123,91 @@ async def resume(update: Update, context: CallbackContext):
         is_paused = False
         await update.message.reply_text("Xyrabot back for monitoring")
 
+def format_pair(pair):
+    """Mengganti IDR dan USDT dengan format yang benar"""
+    if pair.endswith("IDR"):
+        return pair.replace("IDR", "/IDR")
+    elif pair.endswith("USDT"):
+        return pair.replace("USDT", "/USDT")
+    return pair
+
+async def send_maintenance_alert(bot_token, chat_id, coin, status):
+    """Mengirim pesan maintenance ke Telegram"""
+    global total_notifications_sent
+    try:
+        formatted_coin = format_pair(coin)
+        if status == 'start':
+            message = (
+                f"⚠️ <b>WALLET ALERT</b> ⚠️\n\n"
+                f"<b>{formatted_coin}</b> Sedang maintenance"
+            )
+        elif status == 'end':
+            message = (
+                f"✅ <b>WALLET UPDATE</b> ✅\n\n"
+                f"<b>{formatted_coin}</b> Selesai maintenance"
+            )
+        
+        bot = Bot(token=bot_token)
+        await bot.send_message(chat_id=chat_id, text=message, parse_mode="HTML")
+        total_notifications_sent += 1
+        logger.info(f"Maintenance Alert: {message}")
+    except Exception as e:
+        logger.error(f"Error sending maintenance message: {str(e)}")
+        global error_count
+        error_count += 1
+
+async def check_maintenance(bot_token, chat_id, maintenance_coins):
+    """Asynchronous maintenance check"""
+    global is_paused
+    url = "https://indodax.com/api/pairs"
+    previous_maintenance_coins = set()
+
+    while True:
+        if is_paused:
+            await asyncio.sleep(1)
+            continue
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        data = await response.json()
+
+                        current_maintenance_coins = set()
+                        for coin in data:
+                            if coin.get("is_maintenance") == 1:
+                                current_maintenance_coins.add(coin["symbol"])
+
+                        # New maintenance coins
+                        new_maintenance_coins = current_maintenance_coins - previous_maintenance_coins
+                        if new_maintenance_coins:
+                            for coin in new_maintenance_coins:
+                                await send_maintenance_alert(bot_token, chat_id, coin, 'start')
+                                maintenance_coins.add(coin)
+
+                        # Coins finished maintenance
+                        finished_maintenance_coins = previous_maintenance_coins - current_maintenance_coins
+                        if finished_maintenance_coins:
+                            for coin in finished_maintenance_coins:
+                                await send_maintenance_alert(bot_token, chat_id, coin, 'end')
+                                maintenance_coins.discard(coin)
+
+                        previous_maintenance_coins = current_maintenance_coins
+                    else:
+                        logger.error(f"Failed to fetch maintenance data. Status code: {response.status}")
+
+        except Exception as e:
+            logger.error(f"Error in maintenance check: {str(e)}")
+
+        await asyncio.sleep(15)
+
+async def get_wallet_status(pair):
+    """Mendapatkan status wallet untuk pasangan tertentu."""
+    if pair in maintenance_coins:
+        return "🔴 Wallet status: Maintenance ⚠️"
+    else:
+        return "🟢 Wallet status: Open ✅"
+
 async def monitor_price_change(bot_token, chat_id, initial_prices, initial_volumes, initial_times, threshold_percent=5, threshold_price_idr=25, threshold_volume_change=500_000_000, interval=30, volume_threshold=300_000_000):
     global is_paused
     logger.info("Bot is running... Monitoring Price changes...")
@@ -189,6 +275,8 @@ async def monitor_price_change(bot_token, chat_id, initial_prices, initial_volum
             if criteria_met:
                 logger.info(f"Criteria met for {pair}: price_change_percent={price_change_percent:.2f}%, volume_change={volume_change:.2f}")
 
+                wallet_status = await get_wallet_status(pair)
+
                 if price_change_percent > 0:
                     price_change_symbol = "🚀"
                     change_direction = "Naik"
@@ -206,7 +294,8 @@ async def monitor_price_change(bot_token, chat_id, initial_prices, initial_volum
                            f"Harga sebelumnya : Rp.{previous_price:,.0f}\n"
                            f"Volume : Rp.{current_volume:,.0f}\n"
                            f"(Volume trades : Rp.{volume_change:,.0f})\n"
-                           f"{change_direction} dalam kurun waktu : {formatted_time_diff}")
+                           f"{change_direction} dalam kurun waktu : {formatted_time_diff}"
+                           f"{wallet_status}")
 
                 await send_telegram_message(message, bot_token, chat_id)
 
@@ -284,6 +373,8 @@ async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_v
             if price_criteria_met and volume_criteria_met and high_price_criteria_met:
                 logger.info(f"Pump/Dump Alert for {pair}: price_change_percent={price_change_percent:.2f}%, volume_change={volume_change:.2f} IDR")
 
+                wallet_status = await get_wallet_status(pair)
+
                 if price_change_percent > 0:
                     price_change_symbol = "🚀"
                     change_direction = "PUMP"
@@ -316,7 +407,8 @@ async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_v
                            f"Harga sebelumnya: Rp.{previous_price:,.0f}\n"
                            f"Volume: Rp.{current_volume:,.0f}\n"
                            f"(Volume Trades: Rp.{volume_change:,.0f})\n"
-                           f"{change_direction} dalam waktu: {formatted_time_diff}")
+                           f"{change_direction} dalam waktu: {formatted_time_diff}"
+                           f"{wallet_status}")
 
                 await send_telegram_message(message, bot_token, chat_id)
 
@@ -395,9 +487,11 @@ async def main():
         # Start both price monitoring and pump/dump monitoring
         price_monitor_task = asyncio.create_task(monitor_price_change(bot_token, chat_id, initial_prices, initial_volumes, initial_times, threshold_percent, threshold_price_idr, threshold_volume_change, interval, volume_threshold))
         pump_dump_monitor_task = asyncio.create_task(monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_volumes, initial_times, threshold_price_idr=threshold_price_idr))
+        maintenance_monitor_task = asyncio.create_task(check_maintenance(bot_token, chat_id, maintenance_coins))
 
         await price_monitor_task
         await pump_dump_monitor_task
+        await maintenance_monitor_task
 
         await application.running()
 
