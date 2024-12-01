@@ -1,0 +1,5 @@
+aiohttp==3.8.5
+python-telegram-bot==20.3
+aiolimiter==1.2.1
+asyncio==3.4.3
+jsonlib-python3==1.6.1
