@@ -1,1 +1,1 @@
-{"bot_token": "7034318566:AAEdJhY2CA4sYAlOrlGxWzl_RiuY1Ab9OcE", "chat_id": "-1001625368792", "threshold_percent": 5.0, "threshold_price_idr": 25.0, "threshold_volume_change": 20000000.0, "interval": 1.0, "volume_threshold": 100000000.0}
+{"bot_token": "7034318566:AAEdJhY2CA4sYAlOrlGxWzl_RiuY1Ab9OcE", "chat_id": "-1001625368792", "threshold_percent": 5.0, "threshold_price_idr": 25.0, "threshold_volume_change": 20000000.0, "interval": 3.0, "volume_threshold": 100000000.0}
