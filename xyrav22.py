@@ -157,7 +157,10 @@ async def send_maintenance_alert(bot_token, chat_id, coin, status):
         error_count += 1
 
 async def check_maintenance(bot_token, chat_id, maintenance_coins):
-    reported_maintenance_status = {}  # Track maintenance status for each coin
+    """Asynchronous maintenance check"""
+    global is_paused
+    url = "https://indodax.com/api/pairs"
+    previous_maintenance_coins = set()
 
     while True:
         if is_paused:
@@ -166,33 +169,30 @@ async def check_maintenance(bot_token, chat_id, maintenance_coins):
 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get("https://indodax.com/api/pairs") as response:
+                async with session.get(url) as response:
                     if response.status == 200:
                         data = await response.json()
 
-                        for coin in data:
-                            symbol = coin['symbol']
-                            is_maintenance = coin.get('is_maintenance') == 1
+                        current_maintenance_coins = set(
+                            coin["symbol"] for coin in data if coin.get("is_maintenance") == 1
+                        )
 
-                            # Check if maintenance status has changed
-                            if symbol not in reported_maintenance_status:
-                                # First time seeing this coin
-                                reported_maintenance_status[symbol] = is_maintenance
-                                if is_maintenance:
-                                    await send_maintenance_alert(bot_token, chat_id, symbol, 'start')
-                                    maintenance_coins.add(symbol)
-                            elif reported_maintenance_status[symbol] != is_maintenance:
-                                # Status has changed
-                                if is_maintenance:
-                                    await send_maintenance_alert(bot_token, chat_id, symbol, 'start')
-                                    maintenance_coins.add(symbol)
-                                else:
-                                    await send_maintenance_alert(bot_token, chat_id, symbol, 'end')
-                                    maintenance_coins.discard(symbol)
-                                
-                                # Update the tracked status
-                                reported_maintenance_status[symbol] = is_maintenance
+                        # Coins starting maintenance
+                        new_maintenance_coins = current_maintenance_coins - previous_maintenance_coins
+                        for coin in new_maintenance_coins:
+                            if coin not in maintenance_coins:
+                                await send_maintenance_alert(bot_token, chat_id, coin, 'start')
+                                maintenance_coins.add(coin)
 
+                        # Coins ending maintenance
+                        finished_maintenance_coins = previous_maintenance_coins - current_maintenance_coins
+                        for coin in finished_maintenance_coins:
+                            if coin in maintenance_coins:
+                                await send_maintenance_alert(bot_token, chat_id, coin, 'end')
+                                maintenance_coins.remove(coin)
+
+                        # Update previous maintenance state
+                        previous_maintenance_coins = current_maintenance_coins
                     else:
                         logger.error(f"Failed to fetch maintenance data. Status code: {response.status}")
 
@@ -215,7 +215,7 @@ def get_wallet_status(pair, maintenance_coins):
     # Check if any of these pair representations are in maintenance
     for check_pair in maintenance_pair_checks:
         if check_pair in maintenance_coins:
-            return "🔴 Wallet status: Maintenance ⚠️"
+            return "⚠️ Perhatian ⚠️\n🔴 Wallet sedang maintenance 🔴"
     
     return "🟢 Wallet status: Open ✅"
 
@@ -273,6 +273,11 @@ async def monitor_price_change(bot_token, chat_id, initial_prices, initial_volum
 
             volume_change = current_volume - previous_volume
 
+            if volume_change > 0:
+                volume_change_text = f"(🟢Volume meningkat: Rp.{volume_change:,.0f})\n"
+            else:
+                volume_change_text = f"(🔴Volume menurun: Rp.{abs(volume_change):,.0f})\n"
+
             time_diff = current_time - previous_time
 
             logger.info(f"Price Change Percent: {price_change_percent:.2f}%, Volume Change: {volume_change:.2f}")
@@ -300,13 +305,22 @@ async def monitor_price_change(bot_token, chat_id, initial_prices, initial_volum
 
                 formatted_time_diff = str(time_diff).split('.')[0]
 
-                message = (f"<b>{price_change_symbol} {pair_with_idr} ({price_change_percent:.2f}%)</b>\n"
-                           f"Harga : Rp.{current_price:,.0f}\n"
-                           f"Harga sebelumnya : Rp.{previous_price:,.0f}\n"
-                           f"Volume : Rp.{current_volume:,.0f}\n"
-                           f"(Volume trades : Rp.{volume_change:,.0f})\n"
-                           f"{change_direction} dalam kurun waktu : {formatted_time_diff}\n"
-                           f"<b>{wallet_status}</b>")
+                # Update message formatting
+                if wallet_status == "⚠️ Perhatian ⚠️\n🔴 Wallet sedang maintenance 🔴":
+                    message = (f"<b>{price_change_symbol} {pair_with_idr} ({price_change_percent:.2f}%)</b>\n"
+                               f"Harga : Rp.{current_price:,.0f}\n"
+                               f"Harga sebelumnya : Rp.{previous_price:,.0f}\n"
+                               f"Volume : Rp.{current_volume:,.0f}\n"
+                               f"{volume_change_text}"
+                               f"<b>{change_direction} dalam waktu : {formatted_time_diff}</b>\n"
+                               f"<b>{wallet_status}</b>")
+                else:
+                    message = (f"<b>{price_change_symbol} {pair_with_idr} ({price_change_percent:.2f}%)</b>\n"
+                               f"Harga : Rp.{current_price:,.0f}\n"
+                               f"Harga sebelumnya : Rp.{previous_price:,.0f}\n"
+                               f"Volume : Rp.{current_volume:,.0f}\n"
+                               f"{volume_change_text}"
+                               f"<b>{change_direction} dalam waktu : {formatted_time_diff}</b>\n")
 
                 await send_telegram_message(message, bot_token, chat_id)
 
@@ -319,8 +333,7 @@ async def monitor_price_change(bot_token, chat_id, initial_prices, initial_volum
         first_run = False
         await asyncio.sleep(interval)
 
-# New Pump/Dump Monitoring Logic
-async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_volumes, initial_times, maintenance_coins, pump_dump_threshold=20, volume_change_threshold=10_000_000, alert_window_minutes=240, interval=10, threshold_price_idr=25):
+async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_volumes, initial_times, maintenance_coins, pump_dump_threshold=20, volume_change_threshold=10_000_000, interval=5, threshold_price_idr=25):
     global is_paused
     logger.info("Monitoring for Pump/Dump and Volume changes...")
 
@@ -328,8 +341,6 @@ async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_v
     previous_volumes = initial_volumes.copy()
     previous_times = initial_times.copy()
     first_run = True
-
-    reset_timer = 0  # new variable to keep track of the reset timer
 
     while True:
         if is_paused:
@@ -373,13 +384,17 @@ async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_v
 
             volume_change = current_volume - previous_volume
 
+            if volume_change > 0:
+                volume_change_text = f"🟢Volume meningkat: Rp.{volume_change:,.0f}\n"
+            else:
+                volume_change_text = f"🔴Volume menurun: Rp.{abs(volume_change):,.0f}\n"
+
             logger.info(f"Pair: {pair}, Price Change: {price_change_percent:.2f}%, Volume Change: {volume_change:.2f} IDR")
 
             # Check if conditions for pump/dump or volume spike are met
             price_criteria_met = abs(price_change_percent) >= pump_dump_threshold
             volume_criteria_met = abs(volume_change) >= volume_change_threshold
             high_price_criteria_met = current_price >= threshold_price_idr
-            time_criteria_met = True
             
             if price_criteria_met and volume_criteria_met and high_price_criteria_met:
                 logger.info(f"Pump/Dump Alert for {pair}: price_change_percent={price_change_percent:.2f}%, volume_change={volume_change:.2f} IDR")
@@ -388,7 +403,7 @@ async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_v
 
                 if price_change_percent > 0:
                     price_change_symbol = "🚀"
-                    change_direction = "PUMP"
+                    change_direction = "Pump"
                     if price_change_percent > 100:
                         alert_symbol = "⚠ MEGA PUMP ALERT ⚠"
                     elif price_change_percent > 50:
@@ -397,7 +412,7 @@ async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_v
                         alert_symbol = "⚠ PUMP ALERT ⚠"
                 else:
                     price_change_symbol = "🔻"
-                    change_direction = "DUMP"
+                    change_direction = "Dump"
                     if abs(price_change_percent) > 100:
                         alert_symbol = "⚠ MEGA DUMP ALERT ⚠"
                     elif abs(price_change_percent) > 50:
@@ -412,29 +427,30 @@ async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_v
                 minutes, seconds = divmod(remainder, 60)
                 formatted_time_diff = f"{hours:02}:{minutes:02}:{seconds:02}"
 
-                message = (f"<b>{alert_symbol}</b>\n"
-                           f"<b>{price_change_symbol} {pair_with_idr} ({price_change_percent:.2f}%)</b>\n"
-                           f"Harga: Rp.{current_price:,.0f}\n"
-                           f"Harga sebelumnya: Rp.{previous_price:,.0f}\n"
-                           f"Volume: Rp.{current_volume:,.0f}\n"
-                           f"(Volume Trades: Rp.{volume_change:,.0f})\n"
-                           f"{change_direction} dalam waktu: {formatted_time_diff}\n"
-                           f"<b>{wallet_status}</b>")
+                # Update message formatting
+                if wallet_status == "⚠️ Perhatian ⚠️\n🔴 Wallet sedang maintenance 🔴":
+                    message = (f"<b>{alert_symbol}</b>\n"
+                               f"<b>{price_change_symbol} {pair_with_idr} ({price_change_percent:.2f}%)</b>\n"
+                               f"Harga: Rp.{current_price:,.0f}\n"
+                               f"Harga sebelumnya: Rp.{previous_price:,.0f}\n"
+                               f"Volume: Rp.{current_volume:,.0f}\n"
+                               f"{volume_change_text}"
+                               f"<b>{change_direction} dalam waktu: {formatted_time_diff}</b>\n"
+                               f"<b>{wallet_status}</b>")
+                else:
+                    message = (f"<b>{alert_symbol}</b>\n"
+                               f"<b>{price_change_symbol} {pair_with_idr} ({price_change_percent:.2f}%)</b>\n"
+                               f"Harga: Rp.{current_price:,.0f}\n"
+                               f"Harga sebelumnya: Rp.{previous_price:,.0f}\n"
+                               f"Volume: Rp.{current_volume:,.0f}\n"
+                               f"{volume_change_text}"
+                               f"<b>{change_direction} dalam waktu: {formatted_time_diff}</b>\n")
 
                 await send_telegram_message(message, bot_token, chat_id)
 
                 previous_prices[pair] = current_price
                 previous_volumes[pair] = current_volume
                 previous_times[pair] = current_time
-
-        # Reset previous values every 30 minutes
-        reset_timer += interval
-        if reset_timer >= alert_window_minutes * 60:
-            reset_timer = 0
-            previous_prices = initial_prices.copy()
-            previous_volumes = initial_volumes.copy()
-            previous_times = initial_times.copy()
-            logger.info("Resetting previous values...")
 
         await asyncio.sleep(interval)
 
