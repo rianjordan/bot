@@ -10,6 +10,12 @@ import signal
 import sys
 import functools
 from collections import Counter
+import requests  # Impor dari news.py
+from urllib.parse import urlparse  # Impor dari news.py
+import threading
+import schedule
+import time
+from datetime import datetime, timedelta, UTC
 
 config_file = "config.json"
 
@@ -36,6 +42,12 @@ async def send_market_summary(update: Update, context: CallbackContext):
 async def send_stats(update: Update, context: CallbackContext):
     await update.message.reply_text("Stats not implemented yet.")
 
+async def send_news(update: Update, context: CallbackContext):
+    await update.message.reply_text("Fetching news...")
+    bot_token = config["bot_token"]
+    chat_id = config["chat_id"]
+    await my_custom_function(bot_token, chat_id)  # Panggil fungsi dengan parameter yang diperlukan
+
 def load_config():
     try:
         with open(config_file, "r") as f:
@@ -52,9 +64,19 @@ async def send_telegram_message(message, bot_token, chat_id):
     global total_notifications_sent
     try:
         bot = Bot(token=bot_token)
-        await bot.send_message(chat_id=chat_id, text=message, parse_mode="HTML")
-        total_notifications_sent += 1
-        logger.info("Sending Notification")
+        
+        # Jika pesan terlalu panjang, bagi menjadi beberapa bagian
+        max_length = 4096
+        if len(message) > max_length:
+            parts = [message[i:i + max_length] for i in range(0, len(message), max_length)]
+            for part in parts:
+                await bot.send_message(chat_id=chat_id, text=part, parse_mode="HTML")
+                total_notifications_sent += 1
+                logger.info("Sending Notification Part")
+        else:
+            await bot.send_message(chat_id=chat_id, text=message, parse_mode="HTML")
+            total_notifications_sent += 1
+            logger.info("Sending Notification")
     except Exception as e:
         logger.error(f"Error sending message: {str(e)}")
         global error_count
@@ -131,36 +153,320 @@ def format_pair(pair):
         return pair.replace("USDT", "/USDT")
     return pair
 
-async def send_maintenance_alert(bot_token, chat_id, coin, status):
-    """Mengirim pesan maintenance ke Telegram"""
-    global total_notifications_sent
+# Fungsi dari news.py
+def get_domain_from_url(url):
+    """
+    Fungsi untuk mengekstrak nama domain dari URL.
+    Contoh: https://www.beritasatu.com/ekonomi/... -> beritasatu.com
+    """
+    parsed_url = urlparse(url)
+    domain = parsed_url.netloc
+    return domain
+
+async def my_custom_function(bot_token, chat_id):
     try:
-        formatted_coin = format_pair(coin)
-        if status == 'start':
-            message = (
-                f"⚠️ <b>WALLET ALERT</b> ⚠️\n\n"
-                f"<b>{formatted_coin}</b> Sedang maintenance"
-            )
-        elif status == 'end':
-            message = (
-                f"✅ <b>WALLET UPDATE</b> ✅\n\n"
-                f"<b>{formatted_coin}</b> Selesai maintenance"
-            )
-        
-        bot = Bot(token=bot_token)
-        await bot.send_message(chat_id=chat_id, text=message, parse_mode="HTML")
-        total_notifications_sent += 1
-        logger.info(f"Maintenance Alert: {message}")
+        url = "https://api.worldnewsapi.com/search-news?text=kripto+bitcoin&source-countries=ID"
+        api_key = "df5d81e9b8474ab8a378235e45ec1792"
+        headers = {'x-api-key': api_key}
+        response = requests.get(url, headers=headers)
+
+        if response.status_code == 200:
+            news_data = response.json()
+            all_news_messages = []
+
+            for news in news_data['news']:
+                title = news.get('title', 'No Title')
+                url = news.get('url', '#')
+                publish_date = news.get('publish_date', 'Unknown Date')
+                source = news.get('source', {}).get('name', None)
+                
+                if not source:
+                    source = get_domain_from_url(url)
+                
+                news_message = (
+                    f"<a href='{url}'>{title}</a> (Source: {source})\n"
+                    f"Publish Date: {publish_date}\n"
+                    "-------------------------"
+                )
+                all_news_messages.append(news_message)
+
+            return all_news_messages
+        else:
+            logger.error(f"Failed to fetch news. Status code: {response.status_code}")
+            return ["⚠️ Gagal mengambil berita. Silakan coba lagi nanti."]
     except Exception as e:
-        logger.error(f"Error sending maintenance message: {str(e)}")
-        global error_count
-        error_count += 1
+        logger.error(f"Error in my_custom_function: {str(e)}")
+        return ["⚠️ Terjadi kesalahan saat mengambil berita."]
+
+# Timezone UTC+7
+UTC_OFFSET = 7
+
+def get_greeting():
+    now = datetime.now(UTC) + timedelta(hours=UTC_OFFSET)  # Gunakan datetime.now(UTC)
+    hour = now.hour
+
+    if 5 <= hour < 12:
+        return "🌞 Selamat pagi"  # Emotikon pagi
+    elif 12 <= hour < 15:
+        return "🌤️ Selamat siang"  # Emotikon siang
+    elif 15 <= hour < 18:
+        return "🌥️ Selamat sore"  # Emotikon sore
+    else:
+        return "🌙 Selamat malam"  # Emotikon malam
+
+def get_market_summary():
+    url = "https://indodax.com/api/summaries"
+    response = requests.get(url)
+    data = response.json()
+    return data['tickers'], data['prices_24h']
+
+def safe_float(value):
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+def calculate_percentage_change(current_price, previous_price):
+    if previous_price == 0:
+        return 0
+    return ((current_price - previous_price) / previous_price) * 100
+
+def calculate_market_sentiment(tickers, prices_24h):
+    positive = 0
+    negative = 0
+    for coin, info in tickers.items():
+        if 'usdt' not in coin.lower():  # Exclude pairs with USDT
+            normalized_coin = coin.replace('_', '')
+            if normalized_coin in prices_24h:
+                current_price = safe_float(info['last'])
+                price_24h_ago = safe_float(prices_24h[normalized_coin])
+                if current_price is not None and price_24h_ago is not None and price_24h_ago != 0:
+                    change = calculate_percentage_change(current_price, price_24h_ago)
+                    if change > 0:
+                        positive += 1
+                    else:
+                        negative += 1
+    return positive, negative
+
+def get_top_gainers(tickers, prices_24h):
+    gainers = []
+    for coin, info in tickers.items():
+        if 'usdt' not in coin.lower():  # Exclude pairs with USDT
+            normalized_coin = coin.replace('_', '')
+            if normalized_coin in prices_24h:
+                current_price = safe_float(info['last'])
+                price_24h_ago = safe_float(prices_24h[normalized_coin])
+                if current_price is not None and price_24h_ago is not None and price_24h_ago != 0:
+                    change = calculate_percentage_change(current_price, price_24h_ago)
+                    if current_price > 15:  # Filter for prices above 15 IDR
+                        gainers.append((coin, change))
+    
+    # Sort by percentage change (descending)
+    gainers.sort(key=lambda x: x[1], reverse=True)
+    return gainers[:3]  # Return top 3 gainers
+
+def get_top_losers(tickers, prices_24h):
+    losers = []
+    for coin, info in tickers.items():
+        if 'usdt' not in coin.lower():  # Exclude pairs with USDT
+            normalized_coin = coin.replace('_', '')
+            if normalized_coin in prices_24h:
+                current_price = safe_float(info['last'])
+                price_24h_ago = safe_float(prices_24h[normalized_coin])
+                if current_price is not None and price_24h_ago is not None and price_24h_ago != 0:
+                    change = calculate_percentage_change(current_price, price_24h_ago)
+                    if current_price > 15:  # Filter for prices above 15 IDR
+                        losers.append((coin, change))
+    
+    # Sort by percentage change (ascending)
+    losers.sort(key=lambda x: x[1])
+    return losers[:3]  # Return top 3 losers
+
+def get_top_volume(tickers):
+    volumes = []
+    for coin, info in tickers.items():
+        # Handle empty or invalid vol_idr
+        vol_idr = info.get('vol_idr', '0')  # Default to '0' if vol_idr is missing or empty
+        try:
+            volume_idr = float(vol_idr) if vol_idr else 0  # Convert to float, or 0 if empty
+        except ValueError:
+            volume_idr = 0  # Fallback to 0 if conversion fails
+        volumes.append((coin, volume_idr))
+    
+    # Sort by volume (descending)
+    volumes.sort(key=lambda x: x[1], reverse=True)
+    return volumes[:3]  # Return top 3 volume
+
+def format_coin_name(coin):
+    # Ubah format nama kripto dari btc_idr menjadi BTC/IDR
+    return coin.replace('_', '/').upper()
+
+async def generate_message():
+    tickers, prices_24h = get_market_summary()
+    btc_info = tickers['btc_idr']
+    btc_current_price = safe_float(btc_info['last'])
+    btc_previous_price = safe_float(prices_24h['btcidr'])
+    btc_change = calculate_percentage_change(btc_current_price, btc_previous_price)
+
+    top_gainers = get_top_gainers(tickers, prices_24h)
+    top_losers = get_top_losers(tickers, prices_24h)
+    top_volumes = get_top_volume(tickers)
+
+    # Hitung market sentiment
+    positive, negative = calculate_market_sentiment(tickers, prices_24h)
+    market_sentiment = "cerah 🌞🌤️" if positive > negative else "suram 💀📉"
+
+    greeting = get_greeting()
+
+    # Format top volume message
+    top_volume_message = "\n".join([f"📊 <b>{format_coin_name(coin)}</b>: [Rp. {vol:,.0f}]" for coin, vol in top_volumes])
+
+    # Format top gainers message (dengan harga)
+    top_gainers_message = "\n".join(
+        [f"🚀 <b>{format_coin_name(coin)}</b>: [Rp. {safe_float(tickers[coin]['last']):,.0f}] [+{change:.2f}%]" 
+         for coin, change in top_gainers]
+    )
+
+    # Format top losers message (dengan harga)
+    top_losers_message = "\n".join(
+        [f"😢 <b>{format_coin_name(coin)}</b>: [Rp. {safe_float(tickers[coin]['last']):,.0f}] [{change:.2f}%]" 
+         for coin, change in top_losers]
+    )
+
+    # Get top 1 loser and top 1 gainer
+    top_1_loser = top_losers[0] if top_losers else (None, 0)
+    top_1_gainer = top_gainers[0] if top_gainers else (None, 0)
+
+    # Pesan dinamis untuk BTC (dengan tanda + atau -)
+    btc_message = (
+        f"🔥  <b>BTC/IDR</b> saat ini di [Rp. {btc_current_price:,.0f}] – semalam sempat [Rp. {btc_previous_price:,.0f}], "
+        f"dengan kenaikan [+{btc_change:.2f}%] – Bull run beneran atau jebakan batman? 🤔📊"
+        if btc_change >= 0
+        else f"⚠️  <b>BTC/IDR</b> saat ini di [Rp. {btc_current_price:,.0f}] – semalam sempat [Rp. {btc_previous_price:,.0f}], "
+             f"dengan penurunan [{btc_change:.2f}%] – Hati-hati, market lagi ga stabil nih! 🚨📉"
+    )
+
+    # Pesan untuk Top 1 Gainer (dengan harga)
+    top_gainer_message = (
+        f"🏆 <b>Top 1 gainer</b> sekarang dipimpin oleh <b>{format_coin_name(top_1_gainer[0])}</b> "
+        f"dengan harga [Rp. {safe_float(tickers[top_1_gainer[0]]['last']):,.0f}] dengan enaikan [+{top_1_gainer[1]:.2f}%]! "
+        f"Siap-siap FOMO atau udah take profit? 😏🚀"
+    )
+
+    # Pesan untuk Top 1 Loser (dengan harga)
+    top_loser_message = (
+        f"😢 Disisi lain kripto yang apes hari ini ada <b>{format_coin_name(top_1_loser[0])}</b> "
+        f"dengan harga [Rp. {safe_float(tickers[top_1_loser[0]]['last']):,.0f}] dengan penurunan ({top_1_loser[1]:.2f}%). "
+        f"Sehat-sehat ya yang lagi nge-hold <b>{format_coin_name(top_1_loser[0])}</b>. 💪😊"
+    )
+
+    # Bagian 1: Header, BTC, Top 1 Gainer, Top 1 Loser, Market Sentiment
+    part1 = f"""
+<b>==== Xyrabot News ====</b>
+
+{greeting}, Petarunks! Xyra udah siap ngasih update market buat kalian! 🚀✨
+
+{btc_message}
+
+{top_gainer_message}
+
+{top_loser_message}
+
+📊 <b>Market Sentiment:</b> Hari ini market terlihat {market_sentiment} ({positive} kripto yang naik vs {negative} kripto yang turun).
+"""
+
+    # Bagian 2: Altcoin update dan Top Volume
+    part2 = f"""
+📉 <b>Altcoin update:</b>
+Altcoin mulai unjuk gigi! Ada yang nge-pump, ada juga yang masih nyari arah. Siapa yang paling cuan hari ini? 🔥👇
+
+<b>ETH/IDR:</b> [Rp. {safe_float(tickers['eth_idr']['last']):,.0f}] [{calculate_percentage_change(safe_float(tickers['eth_idr']['last']), safe_float(prices_24h['ethidr'])):.2f}%]
+<b>BNB/IDR:</b> [Rp. {safe_float(tickers['bnb_idr']['last']):,.0f}] [{calculate_percentage_change(safe_float(tickers['bnb_idr']['last']), safe_float(prices_24h['bnbidr'])):.2f}%]
+<b>SOL/IDR:</b> [Rp. {safe_float(tickers['sol_idr']['last']):,.0f}] [{calculate_percentage_change(safe_float(tickers['sol_idr']['last']), safe_float(prices_24h['solidr'])):.2f}%]
+
+💰 <b>Top Volume:</b>
+Cek nih ges siapa yang paling banyak ditransaksikan? 📊👇
+
+{top_volume_message}
+"""
+
+    # Bagian 3: Top 3 Gainers dan Top 3 Losers
+    part3 = f"""
+🚀 <b>Top 3 Gainers:</b>
+Yang hijau-hijau hari ini siapa aja? Ini dia yang bikin senyum para holder! 😆💰
+
+{top_gainers_message}
+
+😢 <b>Top 3 Losers:</b>
+Yang merah-merah hari ini siapa aja? Sabar ya buat yang masih hold! 😬👇
+
+{top_losers_message}
+"""
+
+    # Bagian 4: News Update dan penutup
+    # Mengambil 5 berita terbaru dari fungsi my_custom_function
+    bot_token = config["bot_token"]
+    chat_id = config["chat_id"]
+    news_messages = await my_custom_function(bot_token, chat_id)
+
+    # Mengambil 5 berita pertama dari list
+    top_5_news = news_messages[:5]
+
+    # Format pesan untuk 5 berita
+    news_update_message = "\n\n".join(top_5_news)
+
+    part4 = f"""
+Ada update terbaru dari dunia kripto! Simak berita panas hari ini 🔥👇
+
+📰 <b>Berita Panas:</b>
+{news_update_message}
+
+Gimana strategi kalian hari ini? HODL santai, nge-scalping gaspol, atau wait and see? 🤔💵
+
+Tetap cuan & jangan lupa DYOR! ⚡
+
+<b>==== End Of Xyrabot News ====</b>
+"""
+
+    return [part1, part2, part3, part4]
+
+def send_message():
+    messages = generate_message()
+    for message in messages:
+        print(message)
+        time.sleep(10)  # Delay 3 detik antara setiap bagian pesan
+
+async def send_market_summary(update: Update, context: CallbackContext):
+    message = generate_message()
+    await update.message.reply_text(message)
+
+async def send_scheduled_message():
+    messages = await generate_message()
+    bot_token = config["bot_token"]
+    chat_id = config["chat_id"]
+    for message in messages:
+        await send_telegram_message(message, bot_token, chat_id)
+        await asyncio.sleep(10)  # Delay 10 detik antara setiap bagian pesan
+
+async def scheduled_task():
+    while True:
+        now = datetime.now(UTC) + timedelta(hours=UTC_OFFSET)
+        if now.hour == 5 and now.minute == 9:  # 04:14 UTC+7
+            await send_scheduled_message()
+        elif now.hour == 12 and now.minute == 0:  # 12:00 UTC+7
+            await send_scheduled_message()
+        elif now.hour == 16 and now.minute == 0:  # 16:00 UTC+7
+            await send_scheduled_message()
+        elif now.hour == 20 and now.minute == 0:  # 20:00 UTC+7
+            await send_scheduled_message()
+        await asyncio.sleep(60)  # Cek setiap 60 detik
 
 async def check_maintenance(bot_token, chat_id, maintenance_coins):
-    """Asynchronous maintenance check"""
+    """Asynchronous maintenance check with duration tracking."""
     global is_paused
     url = "https://indodax.com/api/pairs"
-    previous_maintenance_coins = set()
+    previous_maintenance_coins = set(maintenance_coins)  # Initialize with current maintenance coins
+    maintenance_start_times = {}  # Dictionary to track start times of maintenance
 
     while True:
         if is_paused:
@@ -173,26 +479,32 @@ async def check_maintenance(bot_token, chat_id, maintenance_coins):
                     if response.status == 200:
                         data = await response.json()
 
+                        # Get current maintenance coins
                         current_maintenance_coins = set(
                             coin["symbol"] for coin in data if coin.get("is_maintenance") == 1
                         )
 
-                        # Coins starting maintenance
-                        new_maintenance_coins = current_maintenance_coins - previous_maintenance_coins
-                        for coin in new_maintenance_coins:
-                            if coin not in maintenance_coins:
+                        # Check for changes in maintenance status
+                        if current_maintenance_coins != previous_maintenance_coins:
+                            # Coins that started maintenance
+                            new_maintenance_coins = current_maintenance_coins - previous_maintenance_coins
+                            for coin in new_maintenance_coins:
                                 await send_maintenance_alert(bot_token, chat_id, coin, 'start')
                                 maintenance_coins.add(coin)
+                                maintenance_start_times[coin] = datetime.now()  # Record start time
 
-                        # Coins ending maintenance
-                        finished_maintenance_coins = previous_maintenance_coins - current_maintenance_coins
-                        for coin in finished_maintenance_coins:
-                            if coin in maintenance_coins:
-                                await send_maintenance_alert(bot_token, chat_id, coin, 'end')
-                                maintenance_coins.remove(coin)
+                            # Coins that finished maintenance
+                            finished_maintenance_coins = previous_maintenance_coins - current_maintenance_coins
+                            for coin in finished_maintenance_coins:
+                                if coin in maintenance_start_times:
+                                    start_time = maintenance_start_times[coin]
+                                    duration = datetime.now() - start_time  # Calculate duration
+                                    await send_maintenance_alert(bot_token, chat_id, coin, 'end', duration)
+                                    maintenance_coins.discard(coin)
+                                    del maintenance_start_times[coin]  # Remove from tracking
 
-                        # Update previous maintenance state
-                        previous_maintenance_coins = current_maintenance_coins
+                            # Update previous maintenance state
+                            previous_maintenance_coins = current_maintenance_coins
                     else:
                         logger.error(f"Failed to fetch maintenance data. Status code: {response.status}")
 
@@ -200,6 +512,42 @@ async def check_maintenance(bot_token, chat_id, maintenance_coins):
             logger.error(f"Error in maintenance check: {str(e)}")
 
         await asyncio.sleep(15)
+
+async def send_maintenance_alert(bot_token, chat_id, coin, status, duration=None):
+    """Send maintenance alert to Telegram with optional duration."""
+    global total_notifications_sent
+    try:
+        formatted_coin = format_pair(coin)
+        if status == 'start':
+            message = (
+                f"⚠️ <b>WALLET ALERT</b> ⚠️\n\n"
+                f"<b>{formatted_coin}</b> Sedang maintenance"
+            )
+        elif status == 'end':
+            if duration:
+                # Format duration into hours, minutes, and seconds
+                hours, remainder = divmod(duration.seconds, 3600)
+                minutes, seconds = divmod(remainder, 60)
+                duration_str = f"{hours:02}:{minutes:02}:{seconds:02}"
+                message = (
+                    f"✅ <b>WALLET UPDATE</b> ✅\n\n"
+                    f"<b>{formatted_coin}</b> Selesai maintenance\n"
+                    f"⏱️ Durasi maintenance: <b>{duration_str}</b>"
+                )
+            else:
+                message = (
+                    f"✅ <b>WALLET UPDATE</b> ✅\n\n"
+                    f"<b>{formatted_coin}</b> Selesai maintenance"
+                )
+        
+        bot = Bot(token=bot_token)
+        await bot.send_message(chat_id=chat_id, text=message, parse_mode="HTML")
+        total_notifications_sent += 1
+        logger.info(f"Maintenance Alert: {message}")
+    except Exception as e:
+        logger.error(f"Error sending maintenance message: {str(e)}")
+        global error_count
+        error_count += 1
 
 def get_wallet_status(pair, maintenance_coins):
     """Get wallet status for a specific pair considering maintenance coins."""
@@ -274,9 +622,9 @@ async def monitor_price_change(bot_token, chat_id, initial_prices, initial_volum
             volume_change = current_volume - previous_volume
 
             if volume_change > 0:
-                volume_change_text = f"(🟢Volume meningkat: Rp.{volume_change:,.0f})\n"
+                volume_change_text = f"🟢Volume meningkat: Rp.{volume_change:,.0f}\n"
             else:
-                volume_change_text = f"(🔴Volume menurun: Rp.{abs(volume_change):,.0f})\n"
+                volume_change_text = f"🔴Volume menurun: Rp.{abs(volume_change):,.0f}\n"
 
             time_diff = current_time - previous_time
 
@@ -506,10 +854,13 @@ async def main():
         application.add_handler(CommandHandler("pause", pause))
         application.add_handler(CommandHandler("resume", resume))
         application.add_handler(CommandHandler("stats", send_stats))
+        application.add_handler(CommandHandler("news", send_news))
 
         await application.initialize()
         await application.start()
         await application.updater.start_polling()
+
+        asyncio.create_task(scheduled_task())  # Jalankan penjadwalan
 
         # Start both price monitoring and pump/dump monitoring
         price_monitor_task = asyncio.create_task(monitor_price_change(bot_token, chat_id, initial_prices, initial_volumes, initial_times, maintenance_coins, threshold_percent, threshold_price_idr, threshold_volume_change, interval, volume_threshold))
