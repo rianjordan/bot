@@ -349,7 +349,7 @@ async def generate_message():
     # Pesan untuk Top 1 Gainer (dengan harga)
     top_gainer_message = (
         f"🏆 <b>Top 1 gainer</b> sekarang dipimpin oleh <b>{format_coin_name(top_1_gainer[0])}</b> "
-        f"dengan harga [Rp. {safe_float(tickers[top_1_gainer[0]]['last']):,.0f}] dengan enaikan [+{top_1_gainer[1]:.2f}%]! "
+        f"dengan harga [Rp. {safe_float(tickers[top_1_gainer[0]]['last']):,.0f}] dengan kenaikan [+{top_1_gainer[1]:.2f}%]! "
         f"Siap-siap FOMO atau udah take profit? 😏🚀"
     )
 
@@ -451,7 +451,7 @@ async def send_scheduled_message():
 async def scheduled_task():
     while True:
         now = datetime.now(UTC) + timedelta(hours=UTC_OFFSET)
-        if now.hour == 5 and now.minute == 9:  # 04:14 UTC+7
+        if now.hour == 7 and now.minute == 0:  # 04:14 UTC+7
             await send_scheduled_message()
         elif now.hour == 12 and now.minute == 0:  # 12:00 UTC+7
             await send_scheduled_message()
