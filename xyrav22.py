@@ -83,7 +83,7 @@ async def send_telegram_message(message, bot_token, chat_id):
         error_count += 1
 
 async def get_all_crypto_data():
-    api_url = 'https://indodax.com/api/tickers'
+    api_url = 'https://indodax.com/api/summaries'
     async with aiohttp.ClientSession() as session:
         async with session.get(api_url) as response:
             if response.status == 200:
@@ -349,14 +349,14 @@ async def generate_message():
     # Pesan untuk Top 1 Gainer (dengan harga)
     top_gainer_message = (
         f"🏆 <b>Top 1 gainer</b> sekarang dipimpin oleh <b>{format_coin_name(top_1_gainer[0])}</b> "
-        f"dengan harga [Rp. {safe_float(tickers[top_1_gainer[0]]['last']):,.0f}] dengan kenaikan [+{top_1_gainer[1]:.2f}%]! "
+        f"dengan harga [Rp. {safe_float(tickers[top_1_gainer[0]]['last']):,.0f}] dan kenaikan [+{top_1_gainer[1]:.2f}%]! "
         f"Siap-siap FOMO atau udah take profit? 😏🚀"
     )
 
     # Pesan untuk Top 1 Loser (dengan harga)
     top_loser_message = (
         f"💀 Disisi lain kripto yang apes hari ini ada <b>{format_coin_name(top_1_loser[0])}</b> "
-        f"dengan harga [Rp. {safe_float(tickers[top_1_loser[0]]['last']):,.0f}] dengan penurunan ({top_1_loser[1]:.2f}%). "
+        f"dengan harga [Rp. {safe_float(tickers[top_1_loser[0]]['last']):,.0f}] dan penurunan ({top_1_loser[1]:.2f}%). "
         f"Sehat-sehat ya yang lagi nge-hold <b>{format_coin_name(top_1_loser[0])}</b>. 💀⚰️"
     )
 
@@ -364,7 +364,7 @@ async def generate_message():
     part1 = f"""
 <b>====== Xyrabot News ======</b>
 
-{greeting}, Petarunks! Xyra udah siap ngasih update market buat kalian! 🚀✨
+{greeting} Petarunks! Xyra udah siap ngasih update market buat kalian! 🚀✨
 
 {btc_message}
 
@@ -378,7 +378,7 @@ async def generate_message():
     # Bagian 2: Altcoin update dan Top Volume
     part2 = f"""
 📊 <b>Altcoin update:</b>
-Altcoin mulai unjuk gigi! Ada yang nge-pump, ada juga yang masih nyari arah. Siapa yang paling cuan hari ini? 🔥👇
+Altcoin mulai unjuk gigi! Ada yang nge-pump, ada juga yang kehilangan arah. Cek nih top altcoin hari ini? 🔥👇
 
 <b>ETH/IDR:</b> [Rp. {safe_float(tickers['eth_idr']['last']):,.0f}] [{calculate_percentage_change(safe_float(tickers['eth_idr']['last']), safe_float(prices_24h['ethidr'])):.2f}%]
 <b>BNB/IDR:</b> [Rp. {safe_float(tickers['bnb_idr']['last']):,.0f}] [{calculate_percentage_change(safe_float(tickers['bnb_idr']['last']), safe_float(prices_24h['bnbidr'])):.2f}%]
@@ -416,7 +416,7 @@ Yang merah-merah hari ini siapa aja? Sabar ya buat yang masih hold! 💀👇
     news_update_message = "\n\n".join(top_5_news)
 
     part4 = f"""
-Ada update terbaru dari dunia kripto! Simak berita panazz hari ini 🔥👇
+Ada update terbaru dari dunia kripto! Simak berita panazz ini 🔥👇
 
 📰 <b>Berita Panazz 🥵:</b>
 {news_update_message}
@@ -427,7 +427,7 @@ Tetap cuan & jangan lupa DYOR! ⚡
 
 Dan semangat buat kalian para Petarunk 💪
 
-~Xyra🤖✨
+~Xyra🤖
 
 <b>==== End Of Xyrabot News ====</b>
 """
@@ -455,7 +455,7 @@ async def send_scheduled_message():
 async def scheduled_task():
     while True:
         now = datetime.now(UTC) + timedelta(hours=UTC_OFFSET)
-        if now.hour == 5 and now.minute == 9:  # 04:14 UTC+7
+        if now.hour == 7 and now.minute == 0:  # 07:00 UTC+7
             await send_scheduled_message()
         elif now.hour == 12 and now.minute == 0:  # 12:00 UTC+7
             await send_scheduled_message()
@@ -571,6 +571,52 @@ def get_wallet_status(pair, maintenance_coins):
     
     return "🟢 Wallet status: Open ✅"
 
+async def calculate_current_rankings(current_data, prices_24h):
+    """Calculate current rankings based on top gainers."""
+    rankings = []
+    
+    # Calculate price changes for all pairs
+    for pair, data in current_data.items():
+        if 'usdt' in pair.lower():
+            continue
+        
+        current_price = safe_float(data.get('last', None))
+        price_24h_ago = safe_float(prices_24h.get(pair.replace('_', ''), None))
+        
+        # Filter out pairs with price below 25 IDR
+        if current_price and current_price < 25:
+            continue
+        
+        if current_price and price_24h_ago and price_24h_ago != 0:
+            price_change_percent = ((current_price - price_24h_ago) / price_24h_ago) * 100
+            rankings.append((pair, price_change_percent))
+    
+    # Sort by percentage change (descending)
+    rankings.sort(key=lambda x: x[1], reverse=True)
+    
+    # Create dictionaries for rankings
+    rank_dict = {}
+    reverse_rank_dict = {}
+    
+    # Calculate normal rankings (from top, for gainers)
+    for idx, (pair, change) in enumerate(rankings):
+        rank_dict[pair] = idx + 1  # Start counting from 1
+        
+    # Calculate reverse rankings (from bottom, for losers)
+    for idx, (pair, change) in enumerate(reversed(rankings)):
+        reverse_rank_dict[pair] = idx + 1  # Start counting from 1
+    
+    return rank_dict, reverse_rank_dict, rankings
+
+def get_rank_display(rank, reverse_rank, price_change_percent):
+    """Return formatted rank display based on position."""
+    if rank <= 10:
+        return f"🔥 Top Gainer #{rank}"
+    elif reverse_rank <= 10:
+        return f"💀 Top Loser #{reverse_rank}"
+    else:
+        return f"📊 Rank #{rank}"
+
 async def monitor_price_change(bot_token, chat_id, initial_prices, initial_volumes, initial_times, maintenance_coins, threshold_percent=5, threshold_price_idr=25, threshold_volume_change=500_000_000, interval=30, volume_threshold=300_000_000):
     global is_paused
     logger.info("Bot is running... Monitoring Price changes...")
@@ -590,6 +636,15 @@ async def monitor_price_change(bot_token, chat_id, initial_prices, initial_volum
         current_data = await get_all_crypto_data()
         if current_data is None:
             continue
+
+        # Calculate current rankings
+        prices_24h = await get_summary_data()
+        if prices_24h is None:
+            continue
+        prices_24h = prices_24h['prices_24h']
+
+        rank_dict, reverse_rank_dict, rankings = await calculate_current_rankings(current_data, prices_24h)
+        current_time = datetime.now()
 
         current_time = datetime.now()
 
@@ -655,11 +710,17 @@ async def monitor_price_change(bot_token, chat_id, initial_prices, initial_volum
                 pair_base = pair.replace('idr', '').replace('_', '').upper()
                 pair_with_idr = f"{pair_base}/IDR"
 
+                # Get current rank and reverse rank
+                current_rank = rank_dict.get(pair, len(rankings))
+                current_reverse_rank = reverse_rank_dict.get(pair, 1)
+                rank_display = get_rank_display(current_rank, current_reverse_rank, price_change_percent)
+
                 formatted_time_diff = str(time_diff).split('.')[0]
 
                 # Update message formatting
                 if wallet_status == "⚠️ Perhatian ⚠️\n🔴 Wallet sedang maintenance 🔴":
-                    message = (f"<b>{price_change_symbol} {pair_with_idr} ({price_change_percent:.2f}%)</b>\n"
+                    message = (f"<b>{rank_display}</b>\n"
+                               f"<b>{price_change_symbol} {pair_with_idr} ({price_change_percent:.2f}%)</b>\n"
                                f"Harga : Rp.{current_price:,.0f}\n"
                                f"Harga sebelumnya : Rp.{previous_price:,.0f}\n"
                                f"Volume : Rp.{current_volume:,.0f}\n"
@@ -667,7 +728,8 @@ async def monitor_price_change(bot_token, chat_id, initial_prices, initial_volum
                                f"<b>{change_direction} dalam waktu : {formatted_time_diff}</b>\n"
                                f"<b>{wallet_status}</b>")
                 else:
-                    message = (f"<b>{price_change_symbol} {pair_with_idr} ({price_change_percent:.2f}%)</b>\n"
+                    message = (f"<b>{rank_display}</b>\n"
+                               f"<b>{price_change_symbol} {pair_with_idr} ({price_change_percent:.2f}%)</b>\n"
                                f"Harga : Rp.{current_price:,.0f}\n"
                                f"Harga sebelumnya : Rp.{previous_price:,.0f}\n"
                                f"Volume : Rp.{current_volume:,.0f}\n"
@@ -703,6 +765,15 @@ async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_v
         current_data = await get_all_crypto_data()
         if current_data is None:
             continue
+
+        # Calculate current rankings
+        prices_24h = await get_summary_data()
+        if prices_24h is None:
+            continue
+        prices_24h = prices_24h['prices_24h']
+
+        rank_dict, reverse_rank_dict, rankings = await calculate_current_rankings(current_data, prices_24h)
+        current_time = datetime.now()
 
         current_time = datetime.now()
 
@@ -775,6 +846,11 @@ async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_v
                 pair_base = pair.replace('idr', '').replace('_', '').upper()
                 pair_with_idr = f"{pair_base}/IDR"
 
+                # Get current rank and reverse rank
+                current_rank = rank_dict.get(pair, len(rankings))
+                current_reverse_rank = reverse_rank_dict.get(pair, 1)
+                rank_display = get_rank_display(current_rank, current_reverse_rank, price_change_percent)
+
                 hours, remainder = divmod(time_diff.seconds, 3600)
                 minutes, seconds = divmod(remainder, 60)
                 formatted_time_diff = f"{hours:02}:{minutes:02}:{seconds:02}"
@@ -782,6 +858,7 @@ async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_v
                 # Update message formatting
                 if wallet_status == "⚠️ Perhatian ⚠️\n🔴 Wallet sedang maintenance 🔴":
                     message = (f"<b>{alert_symbol}</b>\n"
+                               f"<b>{rank_display}</b>\n"  
                                f"<b>{price_change_symbol} {pair_with_idr} ({price_change_percent:.2f}%)</b>\n"
                                f"Harga: Rp.{current_price:,.0f}\n"
                                f"Harga sebelumnya: Rp.{previous_price:,.0f}\n"
@@ -791,6 +868,7 @@ async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_v
                                f"<b>{wallet_status}</b>")
                 else:
                     message = (f"<b>{alert_symbol}</b>\n"
+                               f"<b>{rank_display}</b>\n"
                                f"<b>{price_change_symbol} {pair_with_idr} ({price_change_percent:.2f}%)</b>\n"
                                f"Harga: Rp.{current_price:,.0f}\n"
                                f"Harga sebelumnya: Rp.{previous_price:,.0f}\n"
