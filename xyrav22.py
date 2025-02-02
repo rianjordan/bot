@@ -104,7 +104,7 @@ async def get_summary_data():
                 logger.error(f"Failed to fetch data. Status code: {response.status}")
                 return None
 
-rate_limiter = AsyncLimiter(50, 30)  # Rate limit to 50 requests per 30 seconds
+rate_limiter = AsyncLimiter(70, 30)  # Rate limit to 70 requests per 30 seconds
 
 async def api_limiter():
     async with rate_limiter:
@@ -329,7 +329,7 @@ async def generate_message():
 
     # Format top losers message (dengan harga)
     top_losers_message = "\n".join(
-        [f"😢 <b>{format_coin_name(coin)}</b>: [Rp. {safe_float(tickers[coin]['last']):,.0f}] [{change:.2f}%]" 
+        [f"💀 <b>{format_coin_name(coin)}</b>: [Rp. {safe_float(tickers[coin]['last']):,.0f}] [{change:.2f}%]" 
          for coin, change in top_losers]
     )
 
@@ -339,11 +339,11 @@ async def generate_message():
 
     # Pesan dinamis untuk BTC (dengan tanda + atau -)
     btc_message = (
-        f"🔥  <b>BTC/IDR</b> saat ini di [Rp. {btc_current_price:,.0f}] – semalam sempat [Rp. {btc_previous_price:,.0f}], "
-        f"dengan kenaikan [+{btc_change:.2f}%] – Bull run beneran atau jebakan batman? 🤔📊"
+        f"🔥  <b>BTC/IDR</b> saat ini di [Rp. {btc_current_price:,.0f}] – kemarin sempat [Rp. {btc_previous_price:,.0f}], "
+        f"berarti naik [+{btc_change:.2f}%] nih 🥳, – Bull market beybeihhh 🕺🤑"
         if btc_change >= 0
-        else f"⚠️  <b>BTC/IDR</b> saat ini di [Rp. {btc_current_price:,.0f}] – semalam sempat [Rp. {btc_previous_price:,.0f}], "
-             f"dengan penurunan [{btc_change:.2f}%] – Hati-hati, market lagi ga stabil nih! 🚨📉"
+        else f"⚠️  <b>BTC/IDR</b> saat ini di [Rp. {btc_current_price:,.0f}] – kemarin sempat [Rp. {btc_previous_price:,.0f}], "
+             f"berarti turun [{btc_change:.2f}%] nih 💀, – Hati-hati, market lagi ga stabil kayaknya nih! 🚨📉"
     )
 
     # Pesan untuk Top 1 Gainer (dengan harga)
@@ -355,14 +355,14 @@ async def generate_message():
 
     # Pesan untuk Top 1 Loser (dengan harga)
     top_loser_message = (
-        f"😢 Disisi lain kripto yang apes hari ini ada <b>{format_coin_name(top_1_loser[0])}</b> "
+        f"💀 Disisi lain kripto yang apes hari ini ada <b>{format_coin_name(top_1_loser[0])}</b> "
         f"dengan harga [Rp. {safe_float(tickers[top_1_loser[0]]['last']):,.0f}] dengan penurunan ({top_1_loser[1]:.2f}%). "
-        f"Sehat-sehat ya yang lagi nge-hold <b>{format_coin_name(top_1_loser[0])}</b>. 💪😊"
+        f"Sehat-sehat ya yang lagi nge-hold <b>{format_coin_name(top_1_loser[0])}</b>. 💀⚰️"
     )
 
     # Bagian 1: Header, BTC, Top 1 Gainer, Top 1 Loser, Market Sentiment
     part1 = f"""
-<b>==== Xyrabot News ====</b>
+<b>====== Xyrabot News ======</b>
 
 {greeting}, Petarunks! Xyra udah siap ngasih update market buat kalian! 🚀✨
 
@@ -377,7 +377,7 @@ async def generate_message():
 
     # Bagian 2: Altcoin update dan Top Volume
     part2 = f"""
-📉 <b>Altcoin update:</b>
+📊 <b>Altcoin update:</b>
 Altcoin mulai unjuk gigi! Ada yang nge-pump, ada juga yang masih nyari arah. Siapa yang paling cuan hari ini? 🔥👇
 
 <b>ETH/IDR:</b> [Rp. {safe_float(tickers['eth_idr']['last']):,.0f}] [{calculate_percentage_change(safe_float(tickers['eth_idr']['last']), safe_float(prices_24h['ethidr'])):.2f}%]
@@ -393,12 +393,12 @@ Cek nih ges siapa yang paling banyak ditransaksikan? 📊👇
     # Bagian 3: Top 3 Gainers dan Top 3 Losers
     part3 = f"""
 🚀 <b>Top 3 Gainers:</b>
-Yang hijau-hijau hari ini siapa aja? Ini dia yang bikin senyum para holder! 😆💰
+Yang hijau-hijau hari ini siapa aja? Ini dia yang bikin senyum para holder! 🤑💰
 
 {top_gainers_message}
 
-😢 <b>Top 3 Losers:</b>
-Yang merah-merah hari ini siapa aja? Sabar ya buat yang masih hold! 😬👇
+💀 <b>Top 3 Losers:</b>
+Yang merah-merah hari ini siapa aja? Sabar ya buat yang masih hold! 💀👇
 
 {top_losers_message}
 """
@@ -416,14 +416,18 @@ Yang merah-merah hari ini siapa aja? Sabar ya buat yang masih hold! 😬👇
     news_update_message = "\n\n".join(top_5_news)
 
     part4 = f"""
-Ada update terbaru dari dunia kripto! Simak berita panas hari ini 🔥👇
+Ada update terbaru dari dunia kripto! Simak berita panazz hari ini 🔥👇
 
-📰 <b>Berita Panas:</b>
+📰 <b>Berita Panazz 🥵:</b>
 {news_update_message}
 
-Gimana strategi kalian hari ini? HODL santai, nge-scalping gaspol, atau wait and see? 🤔💵
+Gimana strategi kalian hari ini? HODL santai, nge-scalping gaspol, atau wait and see? 🤔, atau mungkin debus sebubuknya? 💀
 
 Tetap cuan & jangan lupa DYOR! ⚡
+
+Dan semangat buat kalian para Petarunk 💪
+
+~Xyra🤖✨
 
 <b>==== End Of Xyrabot News ====</b>
 """
@@ -451,7 +455,7 @@ async def send_scheduled_message():
 async def scheduled_task():
     while True:
         now = datetime.now(UTC) + timedelta(hours=UTC_OFFSET)
-        if now.hour == 7 and now.minute == 0:  # 04:14 UTC+7
+        if now.hour == 5 and now.minute == 9:  # 04:14 UTC+7
             await send_scheduled_message()
         elif now.hour == 12 and now.minute == 0:  # 12:00 UTC+7
             await send_scheduled_message()
