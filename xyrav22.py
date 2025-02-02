@@ -617,13 +617,18 @@ def get_rank_display(rank, reverse_rank, price_change_percent):
     else:
         return f"📊 Rank #{rank}"
 
+class MonitorState:
+    def __init__(self, initial_prices, initial_volumes, initial_times):
+        self.previous_prices = initial_prices.copy()
+        self.previous_volumes = initial_volumes.copy()
+        self.previous_times = initial_times.copy()
+
 async def monitor_price_change(bot_token, chat_id, initial_prices, initial_volumes, initial_times, maintenance_coins, threshold_percent=5, threshold_price_idr=25, threshold_volume_change=500_000_000, interval=30, volume_threshold=300_000_000):
     global is_paused
     logger.info("Bot is running... Monitoring Price changes...")
 
-    previous_prices = initial_prices.copy()
-    previous_volumes = initial_volumes.copy()
-    previous_times = initial_times.copy()
+    # State terpisah untuk price monitor
+    price_state = MonitorState(initial_prices, initial_volumes, initial_times)
     first_run = True
 
     while True:
@@ -637,15 +642,12 @@ async def monitor_price_change(bot_token, chat_id, initial_prices, initial_volum
         if current_data is None:
             continue
 
-        # Calculate current rankings
         prices_24h = await get_summary_data()
         if prices_24h is None:
             continue
         prices_24h = prices_24h['prices_24h']
 
         rank_dict, reverse_rank_dict, rankings = await calculate_current_rankings(current_data, prices_24h)
-        current_time = datetime.now()
-
         current_time = datetime.now()
 
         for pair, data in current_data.items():
@@ -658,14 +660,14 @@ async def monitor_price_change(bot_token, chat_id, initial_prices, initial_volum
             if current_price is None or current_volume is None:
                 continue
 
-            previous_price = previous_prices.get(pair)
-            previous_volume = previous_volumes.get(pair)
-            previous_time = previous_times.get(pair)
+            previous_price = price_state.previous_prices.get(pair)
+            previous_volume = price_state.previous_volumes.get(pair)
+            previous_time = price_state.previous_times.get(pair)
 
             if previous_price is None or previous_volume is None or previous_time is None:
-                previous_prices[pair] = current_price
-                previous_volumes[pair] = current_volume
-                previous_times[pair] = current_time
+                price_state.previous_prices[pair] = current_price
+                price_state.previous_volumes[pair] = current_volume
+                price_state.previous_times[pair] = current_time
                 continue
 
             logger.info(f"Pair: {pair}")
@@ -738,9 +740,10 @@ async def monitor_price_change(bot_token, chat_id, initial_prices, initial_volum
 
                 pair_notifications[pair_with_idr] += 1
 
-                previous_prices[pair] = current_price
-                previous_volumes[pair] = current_volume
-                previous_times[pair] = current_time
+                
+                price_state.previous_prices[pair] = current_price
+                price_state.previous_volumes[pair] = current_volume
+                price_state.previous_times[pair] = current_time
 
         first_run = False
         await asyncio.sleep(interval)
@@ -749,9 +752,8 @@ async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_v
     global is_paused
     logger.info("Monitoring for Pump/Dump and Volume changes...")
 
-    previous_prices = initial_prices.copy()
-    previous_volumes = initial_volumes.copy()
-    previous_times = initial_times.copy()
+    # State terpisah untuk pump/dump monitor
+    pump_state = MonitorState(initial_prices, initial_volumes, initial_times)
     first_run = True
 
     while True:
@@ -764,15 +766,12 @@ async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_v
         if current_data is None:
             continue
 
-        # Calculate current rankings
         prices_24h = await get_summary_data()
         if prices_24h is None:
             continue
         prices_24h = prices_24h['prices_24h']
 
         rank_dict, reverse_rank_dict, rankings = await calculate_current_rankings(current_data, prices_24h)
-        current_time = datetime.now()
-
         current_time = datetime.now()
 
         for pair, data in current_data.items():
@@ -785,14 +784,14 @@ async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_v
             if current_price is None or current_volume is None:
                 continue
 
-            previous_price = previous_prices.get(pair)
-            previous_volume = previous_volumes.get(pair)
-            previous_time = previous_times.get(pair)
+            previous_price = pump_state.previous_prices.get(pair)
+            previous_volume = pump_state.previous_volumes.get(pair)
+            previous_time = pump_state.previous_times.get(pair)
 
             if previous_price is None or previous_volume is None or previous_time is None:
-                previous_prices[pair] = current_price
-                previous_volumes[pair] = current_volume
-                previous_times[pair] = current_time
+                pump_state.previous_prices[pair] = current_price
+                pump_state.previous_volumes[pair] = current_volume
+                pump_state.previous_times[pair] = current_time
                 continue
 
             time_diff = current_time - previous_time
@@ -874,9 +873,10 @@ async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_v
 
                 await send_telegram_message(message, bot_token, chat_id)
 
-                previous_prices[pair] = current_price
-                previous_volumes[pair] = current_volume
-                previous_times[pair] = current_time
+                
+                pump_state.previous_prices[pair] = current_price
+                pump_state.previous_volumes[pair] = current_volume
+                pump_state.previous_times[pair] = current_time
 
         await asyncio.sleep(interval)
 
@@ -926,6 +926,7 @@ async def main():
         signal.signal(signal.SIGINT, lambda sig, frame: signal_handler(sig, frame, bot_token, chat_id))
 
         await send_telegram_message("Xyrabot Is Online", bot_token, chat_id)
+        await send_telegram_message("Version: 2.8 Beta", bot_token, chat_id)
 
         application = Application.builder().token(bot_token).build()
         application.add_handler(CommandHandler("market", send_market_summary))
