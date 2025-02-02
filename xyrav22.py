@@ -108,7 +108,7 @@ rate_limiter = AsyncLimiter(70, 30)  # Rate limit to 70 requests per 30 seconds
 
 async def api_limiter():
     async with rate_limiter:
-        await asyncio.sleep(0)
+        await asyncio.sleep(1)
 
 def safe_float(value):
     try:
@@ -611,9 +611,9 @@ async def calculate_current_rankings(current_data, prices_24h):
 def get_rank_display(rank, reverse_rank, price_change_percent):
     """Return formatted rank display based on position."""
     if rank <= 10:
-        return f"🔥 Top Gainer #{rank}"
+        return f"🔥 Top #{rank}"
     elif reverse_rank <= 10:
-        return f"💀 Top Loser #{reverse_rank}"
+        return f"💀 Low #{reverse_rank}"
     else:
         return f"📊 Rank #{rank}"
 
@@ -719,8 +719,7 @@ async def monitor_price_change(bot_token, chat_id, initial_prices, initial_volum
 
                 # Update message formatting
                 if wallet_status == "⚠️ Perhatian ⚠️\n🔴 Wallet sedang maintenance 🔴":
-                    message = (f"<b>{rank_display}</b>\n"
-                               f"<b>{price_change_symbol} {pair_with_idr} ({price_change_percent:.2f}%)</b>\n"
+                    message = (f"<b>{price_change_symbol} {pair_with_idr} ({price_change_percent:.2f}%)</b> <b>{rank_display}</b>\n"
                                f"Harga : Rp.{current_price:,.0f}\n"
                                f"Harga sebelumnya : Rp.{previous_price:,.0f}\n"
                                f"Volume : Rp.{current_volume:,.0f}\n"
@@ -728,8 +727,7 @@ async def monitor_price_change(bot_token, chat_id, initial_prices, initial_volum
                                f"<b>{change_direction} dalam waktu : {formatted_time_diff}</b>\n"
                                f"<b>{wallet_status}</b>")
                 else:
-                    message = (f"<b>{rank_display}</b>\n"
-                               f"<b>{price_change_symbol} {pair_with_idr} ({price_change_percent:.2f}%)</b>\n"
+                    message = (f"<b>{price_change_symbol} {pair_with_idr} ({price_change_percent:.2f}%)</b> <b>{rank_display}</b>\n"
                                f"Harga : Rp.{current_price:,.0f}\n"
                                f"Harga sebelumnya : Rp.{previous_price:,.0f}\n"
                                f"Volume : Rp.{current_volume:,.0f}\n"
@@ -857,9 +855,8 @@ async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_v
 
                 # Update message formatting
                 if wallet_status == "⚠️ Perhatian ⚠️\n🔴 Wallet sedang maintenance 🔴":
-                    message = (f"<b>{alert_symbol}</b>\n"
-                               f"<b>{rank_display}</b>\n"  
-                               f"<b>{price_change_symbol} {pair_with_idr} ({price_change_percent:.2f}%)</b>\n"
+                    message = (f"<b>{alert_symbol}</b>\n" 
+                               f"<b>{price_change_symbol} {pair_with_idr} ({price_change_percent:.2f}%)</b> <b>{rank_display}</b>\n"
                                f"Harga: Rp.{current_price:,.0f}\n"
                                f"Harga sebelumnya: Rp.{previous_price:,.0f}\n"
                                f"Volume: Rp.{current_volume:,.0f}\n"
@@ -868,8 +865,7 @@ async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_v
                                f"<b>{wallet_status}</b>")
                 else:
                     message = (f"<b>{alert_symbol}</b>\n"
-                               f"<b>{rank_display}</b>\n"
-                               f"<b>{price_change_symbol} {pair_with_idr} ({price_change_percent:.2f}%)</b>\n"
+                               f"<b>{price_change_symbol} {pair_with_idr} ({price_change_percent:.2f}%)</b> <b>{rank_display}</b>\n"
                                f"Harga: Rp.{current_price:,.0f}\n"
                                f"Harga sebelumnya: Rp.{previous_price:,.0f}\n"
                                f"Volume: Rp.{current_volume:,.0f}\n"
