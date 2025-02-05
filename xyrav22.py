@@ -108,7 +108,7 @@ rate_limiter = AsyncLimiter(70, 30)  # Rate limit to 70 requests per 30 seconds
 
 async def api_limiter():
     async with rate_limiter:
-        await asyncio.sleep(1)
+        await asyncio.sleep(0)
 
 def safe_float(value):
     try:
@@ -340,10 +340,10 @@ async def generate_message():
     # Pesan dinamis untuk BTC (dengan tanda + atau -)
     btc_message = (
         f"🔥  <b>BTC/IDR</b> saat ini di [Rp. {btc_current_price:,.0f}] – kemarin sempat [Rp. {btc_previous_price:,.0f}], "
-        f"berarti naik [+{btc_change:.2f}%] nih 🥳, – Bull market beybeihhh 🕺🤑"
+        f"berarti naik [+{btc_change:.2f}%] 🥳, – Bull market beybeihhh 🕺🤑"
         if btc_change >= 0
         else f"⚠️  <b>BTC/IDR</b> saat ini di [Rp. {btc_current_price:,.0f}] – kemarin sempat [Rp. {btc_previous_price:,.0f}], "
-             f"berarti turun [{btc_change:.2f}%] nih 💀, – Hati-hati, market lagi ga stabil kayaknya nih! 🚨📉"
+             f"berarti turun [{btc_change:.2f}%] 💀, – Hati-hati, market lagi ga stabil kayaknya nih! 🚨📉"
     )
 
     # Pesan untuk Top 1 Gainer (dengan harga)
@@ -515,7 +515,7 @@ async def check_maintenance(bot_token, chat_id, maintenance_coins):
         except Exception as e:
             logger.error(f"Error in maintenance check: {str(e)}")
 
-        await asyncio.sleep(15)
+        await asyncio.sleep(30)
 
 async def send_maintenance_alert(bot_token, chat_id, coin, status, duration=None):
     """Send maintenance alert to Telegram with optional duration."""
