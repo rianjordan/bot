@@ -825,18 +825,18 @@ async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_v
                     price_change_symbol = "🚀"
                     change_direction = "Pump"
                     if price_change_percent > 100:
-                        alert_symbol = "⚠ MEGA PUMP ALERT ⚠"
+                        alert_symbol = "💥 MEGA PUMP ALERT 💥"
                     elif price_change_percent > 50:
-                        alert_symbol = "⚠ BIG PUMP ALERT ⚠"
+                        alert_symbol = "🔥 BIG PUMP ALERT 🔥"
                     else:
                         alert_symbol = "⚠ PUMP ALERT ⚠"
                 else:
                     price_change_symbol = "🔻"
                     change_direction = "Dump"
                     if abs(price_change_percent) > 100:
-                        alert_symbol = "⚠ MEGA DUMP ALERT ⚠"
+                        alert_symbol = "💀 MEGA DUMP ALERT 💀"
                     elif abs(price_change_percent) > 50:
-                        alert_symbol = "⚠ BIG DUMP ALERT ⚠"
+                        alert_symbol = "🚨 BIG DUMP ALERT 🚨"
                     else:
                         alert_symbol = "⚠ DUMP ALERT ⚠"
 
