@@ -461,7 +461,7 @@ async def scheduled_task():
             await send_scheduled_message()
         elif now.hour == 16 and now.minute == 0:  # 16:00 UTC+7
             await send_scheduled_message()
-        elif now.hour == 20 and now.minute == 0:  # 20:00 UTC+7
+        elif now.hour == 19 and now.minute == 0:  # 20:00 UTC+7
             await send_scheduled_message()
         await asyncio.sleep(60)  # Cek setiap 60 detik
 
@@ -515,7 +515,7 @@ async def check_maintenance(bot_token, chat_id, maintenance_coins):
         except Exception as e:
             logger.error(f"Error in maintenance check: {str(e)}")
 
-        await asyncio.sleep(30)
+        await asyncio.sleep(60)
 
 async def send_maintenance_alert(bot_token, chat_id, coin, status, duration=None):
     """Send maintenance alert to Telegram with optional duration."""
