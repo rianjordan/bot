@@ -558,7 +558,8 @@ def get_wallet_status(pair, maintenance_coins):
     # Convert pair to different formats to match maintenance tracking
     maintenance_pair_checks = [
         pair,  # Original pair
-        pair.replace('_', ''),  # Without underscore
+        pair.replace('_', ''),
+        pair.replace('new', ''),# Without underscore
         pair.replace('idr', '/IDR').upper(),  # Formatted pair
         pair.replace('_idr', '/IDR').upper(),  # Another potential format
         pair.upper().replace('_', ''),  # Uppercase without underscore
@@ -709,7 +710,7 @@ async def monitor_price_change(bot_token, chat_id, initial_prices, initial_volum
                     price_change_symbol = "🔻"
                     change_direction = "Turun"
 
-                pair_base = pair.replace('idr', '').replace('_', '').upper()
+                pair_base = pair.replace('idr', '').replace('_', '').replace('new', '').upper()
                 pair_with_idr = f"{pair_base}/IDR"
 
                 # Get current rank and reverse rank
@@ -840,7 +841,7 @@ async def monitor_pump_dump_alerts(bot_token, chat_id, initial_prices, initial_v
                     else:
                         alert_symbol = "⚠ DUMP ALERT ⚠"
 
-                pair_base = pair.replace('idr', '').replace('_', '').upper()
+                pair_base = pair.replace('idr', '').replace('_', '').replace('new', '').upper()
                 pair_with_idr = f"{pair_base}/IDR"
 
                 # Get current rank and reverse rank
